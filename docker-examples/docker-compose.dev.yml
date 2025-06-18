@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  allora-mcp-http:
+    build: .
+    ports:
+      - "3001:3001"
+    environment:
+      - MCP_TRANSPORT=http
+      - ALLORA_API_KEY=test-key-for-development
+      - ALLORA_CHAIN_SLUG=TESTNET
+      - PORT=3001
+      - NODE_ENV=development
+    volumes:
+      - .:/app
+      - /app/node_modules
+    command: npm run dev
+    networks:
+      - allora-network
+
+  allora-mcp-stdio:
+    build: .
+    environment:
+      - MCP_TRANSPORT=stdio
+      - ALLORA_API_KEY=test-key-for-development
+      - ALLORA_CHAIN_SLUG=TESTNET
+      - NODE_ENV=development
+    volumes:
+      - .:/app
+      - /app/node_modules
+    command: npm run dev
+    networks:
+      - allora-network
+
+networks:
+  allora-network:
+    driver: bridge

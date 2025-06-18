@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  allora-mcp:
+    build: .
+    ports:
+      - "3001:3001"
+    environment:
+      - MCP_TRANSPORT=http
+      - ALLORA_API_KEY=${ALLORA_API_KEY}
+      - ALLORA_CHAIN_SLUG=${ALLORA_CHAIN_SLUG:-TESTNET}
+      - PORT=3001
+      - NODE_ENV=production
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - allora-network
+
+networks:
+  allora-network:
+    driver: bridge
