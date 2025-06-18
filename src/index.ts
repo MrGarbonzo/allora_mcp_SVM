@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 
+import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { ChainSlug } from '@alloralabs/allora-sdk';
 import dotenv from 'dotenv';
+import express from 'express';
 import { AlloraClientWrapper } from './allora-client.js';
 import { createMCPServer } from './mcp-server.js';
 
@@ -11,11 +13,21 @@ dotenv.config();
 
 /**
  * Main entry point for the Allora MCP Server
- * Designed for SecretVM deployment with stdio transport only
+ * Supports both HTTP and stdio transports based on MCP_TRANSPORT environment variable
+ * Designed for SecretVM deployment with conditional transport selection
  */
 async function main(): Promise<void> {
   try {
-    console.error('[INFO] Starting Allora MCP Server for SecretVM...');
+    // Determine transport mode from environment variable
+    const transportMode = process.env.MCP_TRANSPORT || 'stdio';
+    
+    // Validate transport mode
+    if (!['http', 'stdio'].includes(transportMode)) {
+      console.error('[ERROR] Invalid MCP_TRANSPORT. Use "http" or "stdio"');
+      process.exit(1);
+    }
+    
+    console.error(`[INFO] Starting Allora MCP Server in ${transportMode} mode...`);
     
     // Validate required environment variables
     const apiKey = process.env.ALLORA_API_KEY;
@@ -46,14 +58,81 @@ async function main(): Promise<void> {
     // Create MCP server
     const server = createMCPServer(alloraClient);
 
-    // Create stdio transport (single transport, no HTTP/SSE)
-    const transport = new StdioServerTransport();
-    
-    console.error('[INFO] Connecting to stdio transport...');
-    await server.connect(transport);
-    
-    console.error('[INFO] Allora MCP Server is ready and connected via stdio');
-    console.error('[INFO] Server is now ready to receive MCP requests');
+    if (transportMode === 'http') {
+      // HTTP/SSE transport mode
+      const app = express();
+      
+      app.use(function (req, _res, next) {
+        console.log(`${req.method} ${req.url}`);
+        next();
+      });
+
+      const transports: { [sessionId: string]: SSEServerTransport } = {};
+
+      // Health check endpoint
+      app.get('/health', (_req, res) => {
+        res.json({
+          status: 'healthy',
+          mode: 'http',
+          timestamp: new Date().toISOString(),
+          chain: chainSlug
+        });
+      });
+
+      app.get('/sse', async (_req, res) => {
+        console.log('[INFO] Received SSE connection');
+
+        const transport = new SSEServerTransport('/messages', res);
+        transports[transport.sessionId] = transport;
+
+        await server.connect(transport);
+      });
+
+      app.post('/messages', async (_req, res) => {
+        const sessionId = _req.query.sessionId as string;
+        console.log(`[INFO] Received message for session: ${sessionId}`);
+
+        let bodyBuffer = Buffer.alloc(0);
+
+        _req.on('data', (chunk) => {
+          bodyBuffer = Buffer.concat([bodyBuffer, chunk]);
+        });
+
+        _req.on('end', async () => {
+          try {
+            const bodyStr = bodyBuffer.toString('utf8');
+            const bodyObj = JSON.parse(bodyStr);
+            console.log(`[DEBUG] Message: ${JSON.stringify(bodyObj, null, 2)}`);
+          } catch (error) {
+            console.error(`[ERROR] Error handling request: ${error}`);
+          }
+        });
+
+        const transport = transports[sessionId];
+        if (!transport) {
+          res.status(400).send('No transport found for sessionId');
+          return;
+        }
+        await transport.handlePostMessage(_req, res);
+      });
+
+      const PORT = process.env.PORT || 3001;
+      app.listen(PORT, () => {
+        console.error(`[INFO] HTTP server running on port ${PORT}`);
+        console.error('[INFO] Allora MCP Server is ready and connected via HTTP/SSE');
+        console.error(`[INFO] Health check available at: http://localhost:${PORT}/health`);
+      });
+
+    } else if (transportMode === 'stdio') {
+      // Stdio transport mode
+      const transport = new StdioServerTransport();
+      
+      console.error('[INFO] Connecting to stdio transport...');
+      await server.connect(transport);
+      
+      console.error('[INFO] Allora MCP Server is ready and connected via stdio');
+      console.error('[INFO] Server is now ready to receive MCP requests');
+    }
 
   } catch (error) {
     console.error('[FATAL] Failed to start server:', error);

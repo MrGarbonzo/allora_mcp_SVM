@@ -2,19 +2,24 @@ version: '3.8'
 
 services:
   allora-mcp:
-    build: .
+    image: ghcr.io/mrgarbonzo/allora_mcp_svm:latest
     ports:
       - "3001:3001"
     environment:
       # These will be set via SecretVM's private environment upload
-      - MCP_TRANSPORT=${MCP_TRANSPORT}
+      - MCP_TRANSPORT=${MCP_TRANSPORT:-stdio}
       - ALLORA_API_KEY=${ALLORA_API_KEY}
       - ALLORA_CHAIN_SLUG=${ALLORA_CHAIN_SLUG:-TESTNET}
       - PORT=${PORT:-3001}
       - NODE_ENV=production
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "node", "-e", "console.log('Health check passed'); process.exit(0)"]
+      test: |
+        if [ "$$MCP_TRANSPORT" = "http" ]; then
+          curl -f http://localhost:3001/health || exit 1
+        else
+          echo "stdio mode - basic health check"
+        fi
       interval: 30s
       timeout: 10s
       retries: 3

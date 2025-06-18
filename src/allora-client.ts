@@ -21,8 +21,12 @@ export class AlloraClientWrapper {
    */
   async getAllTopics(): Promise<AlloraTopicsResponse> {
     return this.withRetry(async () => {
-      const topics = await this.client.getAllTopics();
-      return topics;
+      const response = await this.client.getAllTopics();
+      // Handle the API response structure
+      return {
+        topics: Array.isArray(response) ? response : (response as any).topics || [],
+        pagination: (response as any).pagination
+      };
     });
   }
 
@@ -31,8 +35,16 @@ export class AlloraClientWrapper {
    */
   async getInferenceByTopicID(topicID: number): Promise<AlloraInference> {
     return this.withRetry(async () => {
-      const inference = await this.client.getInferenceByTopicID(topicID);
-      return inference;
+      const response = await this.client.getInferenceByTopicID(topicID);
+      // Handle the API response structure
+      const responseData = response as any;
+      return {
+        topicId: responseData.topicId || topicID,
+        blockHeight: responseData.blockHeight || 0,
+        inferer: responseData.inferer || '',
+        value: responseData.value || '',
+        timestamp: responseData.timestamp || new Date().toISOString()
+      };
     });
   }
 
